@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 )
 
 type Device struct {
@@ -13,16 +15,53 @@ type Device struct {
 }
 
 func mockDevices() []Device {
-	return []Device{
-		{ID: "d000000000001", Name: "Device A", Type: "Sensor", LastOnline: 1695638400},
-		{ID: "d000000000002", Name: "Device B", Type: "Actuator", LastOnline: 1695638500},
-		{ID: "d000000000003", Name: "Device C", Type: "Gateway", LastOnline: 1695638600},
+	devices := make([]Device, 300)
+	types := []string{"Sensor", "Actuator", "Gateway", "Camera"}
+	for i := 0; i < 300; i++ {
+		devices[i] = Device{
+			ID:         "d" + fmt.Sprintf("%012d", i+1),
+			Name:       fmt.Sprintf("设备%03d", i+1),
+			Type:       types[i%len(types)],
+			LastOnline: 1695638400 + int64(i*60),
+		}
 	}
+	return devices
 }
 
 func devicesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(mockDevices())
+	devices := mockDevices()
+	// 分页参数
+	page := 1
+	pageSize := 20
+	q := r.URL.Query()
+	if p := q.Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if ps := q.Get("pageSize"); ps != "" {
+		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
+			pageSize = v
+		}
+	}
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > len(devices) {
+		start = len(devices)
+	}
+	if end > len(devices) {
+		end = len(devices)
+	}
+	paged := devices[start:end]
+	// 返回分页数据和总数
+	resp := map[string]interface{}{
+		"devices":  paged,
+		"total":    len(devices),
+		"page":     page,
+		"pageSize": pageSize,
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func main() {

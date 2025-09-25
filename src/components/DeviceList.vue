@@ -2,24 +2,29 @@
   <div class="device-list">
     <h2>设备列表</h2>
     <button @click="fetchDevices">刷新</button>
-      <table v-if="devices.length" class="device-table">
-        <thead>
-          <tr>
-            <th>设备名称</th>
-            <th>ID</th>
-            <th>类型</th>
-            <th>最近在线</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="device in devices" :key="device.id">
-            <td>{{ device.name }}</td>
-            <td>{{ device.id }}</td>
-            <td>{{ device.type }}</td>
-            <td>{{ formatUTC(device.lastOnline) }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <table v-if="devices.length" class="device-table">
+      <thead>
+        <tr>
+          <th>设备名称</th>
+          <th>ID</th>
+          <th>类型</th>
+          <th>最近在线</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="device in devices" :key="device.id">
+          <td>{{ device.name }}</td>
+          <td>{{ device.id }}</td>
+          <td>{{ device.type }}</td>
+          <td>{{ formatUTC(device.lastOnline) }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-if="devices.length" class="pagination">
+      <button @click="changePage(currentPage - 1)" :disabled="currentPage === 1">上一页</button>
+      <span>第 {{ currentPage }} 页 / 共 {{ totalPages }} 页</span>
+      <button @click="changePage(currentPage + 1)" :disabled="currentPage === totalPages">下一页</button>
+    </div>
     <div v-else>暂无设备数据</div>
     <div v-if="error" class="error">{{ error }}</div>
   </div>
@@ -36,20 +41,32 @@ function formatUTC(ts) {
 
 const devices = ref([])
 const error = ref('')
+const currentPage = ref(1)
+const pageSize = 20
+const totalPages = ref(1)
+const total = ref(0)
 
-async function fetchDevices() {
+async function fetchDevices(page = 1) {
   error.value = ''
   try {
-    // 请将 URL 替换为实际服务端接口
-    const res = await fetch('/api/devices')
+    const res = await fetch(`/api/devices?page=${page}&pageSize=${pageSize}`)
     if (!res.ok) throw new Error('服务端错误')
-    devices.value = await res.json()
+    const data = await res.json()
+    devices.value = data.devices || []
+    total.value = data.total || 0
+    totalPages.value = Math.ceil(total.value / pageSize)
+    currentPage.value = data.page || page
   } catch (e) {
     error.value = e.message
   }
 }
 
-fetchDevices()
+function changePage(page) {
+  if (page < 1 || page > totalPages.value) return
+  fetchDevices(page)
+}
+
+fetchDevices(1)
 </script>
 
 <style scoped>
@@ -71,5 +88,23 @@ fetchDevices()
 }
 .device-table tr:nth-child(even) {
   background-color: #fafafa;
+}
+.pagination {
+  margin: 1em 0;
+  display: flex;
+  align-items: center;
+  gap: 1em;
+}
+.pagination button {
+  padding: 0.4em 1em;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.pagination button:disabled {
+  background: #eee;
+  color: #aaa;
+  cursor: not-allowed;
 }
 </style>
