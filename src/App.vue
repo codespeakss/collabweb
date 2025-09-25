@@ -5,9 +5,10 @@ import HelloWorld from './components/HelloWorld.vue'
 
 <template>
   <nav style="margin-bottom:2em">
-    <router-link to="/">首页</router-link> |
-    <router-link to="/devices">设备列表</router-link> |
-    <router-link to="/about">关于</router-link>
+     <router-link to="/">首页</router-link> |
+     <router-link to="/devices">设备列表</router-link> |
+     <router-link to="/workflow">工作流</router-link> |
+     <router-link to="/about">关于</router-link>
   </nav>
   <router-view />
 </template>

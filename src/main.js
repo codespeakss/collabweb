@@ -6,11 +6,13 @@ import App from './App.vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import DeviceList from './components/DeviceList.vue'
 import About from './components/About.vue'
+import WorkflowDAG from './components/WorkflowDAG.vue'
 
 const routes = [
 	{ path: '/', component: App },
 	{ path: '/devices', component: DeviceList },
-	{ path: '/about', component: About }
+	{ path: '/about', component: About },
+	{ path: '/workflow', component: WorkflowDAG }
 ]
 
 const router = createRouter({
