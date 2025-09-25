@@ -3,9 +3,10 @@
     <h2>设备列表</h2>
     <button @click="fetchDevices">刷新</button>
     <ul v-if="devices.length">
-      <li v-for="device in devices" :key="device.id">
-        {{ device.name }} ({{ device.status }})
-      </li>
+        <li v-for="device in devices" :key="device.id">
+          {{ device.name }} [ID: {{ device.id }}] ({{ device.type }})<br>
+    最近在线: {{ formatUTC(device.lastOnline) }}
+        </li>
     </ul>
     <div v-else>暂无设备数据</div>
     <div v-if="error" class="error">{{ error }}</div>
@@ -14,6 +15,12 @@
 
 <script setup>
 import { ref } from 'vue'
+
+function formatUTC(ts) {
+  if (!ts) return '未知';
+  const date = new Date(ts * 1000);
+  return date.toISOString().replace('T', ' ').replace(/\..+/, '');
+}
 
 const devices = ref([])
 const error = ref('')

@@ -1,7 +1,9 @@
 #!/bin/bash
 # 构建并发布前端产物到 nginx 目录
 
+
 # 1. 构建前端
+npm install
 npm run build
 
 # 2.  nginx 目标目录
