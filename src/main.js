@@ -1,5 +1,23 @@
+
 import { createApp } from 'vue'
 import './style.css'
 import App from './App.vue'
 
-createApp(App).mount('#app')
+import { createRouter, createWebHistory } from 'vue-router'
+import DeviceList from './components/DeviceList.vue'
+import About from './components/About.vue'
+
+const routes = [
+	{ path: '/', component: App },
+	{ path: '/devices', component: DeviceList },
+	{ path: '/about', component: About }
+]
+
+const router = createRouter({
+	history: createWebHistory(),
+	routes
+})
+
+const app = createApp(App)
+app.use(router)
+app.mount('#app')
