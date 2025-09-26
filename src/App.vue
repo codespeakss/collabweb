@@ -1,16 +1,22 @@
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
 </script>
 
 
 <template>
-  <nav style="margin-bottom:2em">
-     <router-link to="/">首页</router-link> |
-     <router-link to="/devices">设备列表</router-link> |
-     <router-link to="/workflow">工作流</router-link> |
-     <router-link to="/about">关于</router-link>
+  <nav class="top-nav">
+    <div class="container nav-inner">
+      <router-link to="/">首页</router-link>
+      <span class="sep">|</span>
+      <router-link to="/devices">设备列表</router-link>
+      <span class="sep">|</span>
+      <router-link to="/workflow">工作流</router-link>
+      <span class="sep">|</span>
+      <router-link to="/about">关于</router-link>
+    </div>
   </nav>
-  <router-view />
+  <main class="container">
+    <router-view />
+  </main>
 </template>
 
 <style scoped>
@@ -25,5 +31,43 @@ import HelloWorld from './components/HelloWorld.vue'
 }
 .logo.vue:hover {
   filter: drop-shadow(0 0 2em #42b883aa);
+}
+
+/* stable top navigation */
+.top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  width: 100%;
+  backdrop-filter: saturate(180%) blur(8px);
+  -webkit-backdrop-filter: saturate(180%) blur(8px);
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e5e5e5;
+  background-color: rgba(255, 255, 255, 0.9);
+}
+
+.nav-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  white-space: nowrap;
+}
+
+.top-nav a {
+  color: inherit;
+}
+
+.top-nav a.router-link-active {
+  font-weight: 600;
+  color: #1976d2;
+}
+
+/* Dark mode header background */
+@media (prefers-color-scheme: dark) {
+  .top-nav {
+    background-color: rgba(36, 36, 36, 0.9);
+    border-bottom-color: #333;
+  }
 }
 </style>

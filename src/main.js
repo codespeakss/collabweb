@@ -4,12 +4,13 @@ import './style.css'
 import App from './App.vue'
 
 import { createRouter, createWebHistory } from 'vue-router'
+import Home from './components/Home.vue'
 import DeviceList from './components/DeviceList.vue'
 import About from './components/About.vue'
 import WorkflowDAG from './components/WorkflowDAG.vue'
 
 const routes = [
-	{ path: '/', component: App },
+	{ path: '/', component: Home },
 	{ path: '/devices', component: DeviceList },
 	{ path: '/about', component: About },
 	{ path: '/workflow', component: WorkflowDAG }
