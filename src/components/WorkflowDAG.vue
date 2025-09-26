@@ -13,7 +13,7 @@
         <label class="ctrl">高度 <input type="number" v-model.number="userHeight" min="300" step="50" style="width:90px" /></label>
       </template>
     </div>
-    <svg :width="svgViewWidth" :height="svgViewHeight">
+    <svg ref="svgEl" :width="svgAttrWidth" :height="svgAttrHeight" :viewBox="`0 0 ${svgViewWidth} ${svgViewHeight}`">
       <g v-for="(node, idx) in nodes" :key="node.id">
         <!-- 节点圆形 -->
           <foreignObject :x="posX(node) - nodeWidth / 2" :y="posY(node) - nodeHeight / 2" :width="nodeWidth" :height="nodeHeight">
@@ -57,6 +57,11 @@
           <path d="M0,0 L6,3 L0,6 Z" fill="#f44336" />
         </marker>
       </defs>
+      <!-- 内嵌于 SVG 的全屏控制按钮 -->
+      <g class="svg-fs-btn" @click="toggleFullscreen" style="cursor: pointer; user-select: none;" :transform="`translate(${svgViewWidth - 80}, 8)`">
+        <rect rx="6" ry="6" width="72" height="26" fill="none" />
+        <text x="36" y="17" text-anchor="middle" font-size="12">{{ isFullscreen ? '退出全屏' : '全屏' }}</text>
+      </g>
     </svg>
     <div class="legend">
       <div class="legend-item"><span class="swatch" :style="{background: statusColor('success')}"></span>成功</div>
@@ -112,6 +117,8 @@ export default {
       // 后端返回的 DAG 数据
       nodes: [],
       edges: [],
+      // 全屏状态
+      isFullscreen: false,
     };
   },
   methods: {
@@ -287,6 +294,28 @@ export default {
         if (n.id === 'A') { n.status = 'success'; return }
         n.status = pool[Math.floor(Math.random() * pool.length)]
       })
+    },
+    // 进入/退出全屏
+    async toggleFullscreen() {
+      if (this.isFullscreen) {
+        try {
+          if (document.fullscreenElement) await document.exitFullscreen()
+        } catch (e) {
+          console.warn('退出全屏失败', e)
+        }
+      } else {
+        const el = this.$refs.svgEl
+        if (!el) return
+        try {
+          await el.requestFullscreen()
+        } catch (e) {
+          console.warn('进入全屏失败', e)
+        }
+      }
+    },
+    onFsChange() {
+      const el = this.$refs.svgEl
+      this.isFullscreen = !!document.fullscreenElement && (document.fullscreenElement === el)
     }
   },
   computed: {
@@ -305,10 +334,21 @@ export default {
     },
     svgViewHeight() {
       return this.useAutoSize ? this.canvasHeight : this.userHeight
+    },
+    // 在全屏状态下，SVG 使用百分比占满屏幕
+    svgAttrWidth() {
+      return this.isFullscreen ? '100%' : this.svgViewWidth
+    },
+    svgAttrHeight() {
+      return this.isFullscreen ? '100%' : this.svgViewHeight
     }
   },
   mounted() {
     this.fetchWorkflow()
+    document.addEventListener('fullscreenchange', this.onFsChange)
+  },
+  beforeUnmount() {
+    document.removeEventListener('fullscreenchange', this.onFsChange)
   }
 };
 </script>
@@ -328,6 +368,34 @@ export default {
 svg {
   background: #fafafa;
   border: 1px solid #eee;
+}
+/* 全屏时，让 svg 占满可用空间（不改变背景色） */
+svg:fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  border: none;
+}
+/* SVG 内全屏按钮：低存在感，悬停更明显 */
+.svg-fs-btn rect {
+  stroke: #666;
+  stroke-width: 1;
+  fill: rgba(255, 255, 255, 0.4);
+  opacity: 0.35;
+  transition: opacity 0.2s ease, fill 0.2s ease, stroke 0.2s ease;
+}
+.svg-fs-btn text {
+  fill: #333;
+  opacity: 0.7;
+  pointer-events: none;
+  transition: opacity 0.2s ease, fill 0.2s ease;
+}
+.svg-fs-btn:hover rect {
+  opacity: 0.95;
+  fill: rgba(255, 255, 255, 0.9);
+}
+.svg-fs-btn:hover text {
+  opacity: 1;
+  fill: #111;
 }
 .legend {
   display: flex;
