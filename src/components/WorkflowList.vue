@@ -3,6 +3,8 @@
     <h2>工作流列表</h2>
     <div class="toolbar">
       <button @click="fetchList">刷新</button>
+      <span class="sep"></span>
+      <label class="ctrl">每页 <input type="number" min="1" step="1" v-model.number="pageSize" @change="onPageSizeChange" style="width:72px"/></label>
     </div>
     <div v-if="loading" class="hint">加载中...</div>
     <div v-else>
@@ -20,6 +22,11 @@
         </li>
       </ul>
       <div v-if="!workflows.length" class="hint">暂无工作流</div>
+      <div class="pager" v-else>
+        <button class="pg-btn" :disabled="page<=1" @click="goPrev">上一页</button>
+        <span class="pg-info">第 {{ page }} / {{ totalPages }} 页（共 {{ total }} 条）</span>
+        <button class="pg-btn" :disabled="page>=totalPages" @click="goNext">下一页</button>
+      </div>
     </div>
   </div>
 </template>
@@ -30,6 +37,9 @@ export default {
   data() {
     return {
       workflows: [],
+      page: 1,
+      pageSize: 10,
+      total: 0,
       loading: false,
       error: ''
     }
@@ -39,15 +49,41 @@ export default {
       this.loading = true
       this.error = ''
       try {
-        const res = await fetch('/api/workflows')
+        const res = await fetch(`/api/workflows?page=${this.page}&pageSize=${this.pageSize}`)
         if (!res.ok) throw new Error('请求失败: ' + res.status)
         const data = await res.json()
-        this.workflows = Array.isArray(data) ? data : []
+        // 兼容老格式（数组）与新分页格式（对象）
+        if (Array.isArray(data)) {
+          this.workflows = data
+          this.total = data.length
+        } else {
+          this.workflows = Array.isArray(data.workflows) ? data.workflows : []
+          this.total = typeof data.total === 'number' ? data.total : this.workflows.length
+          this.page = typeof data.page === 'number' ? data.page : this.page
+          this.pageSize = typeof data.pageSize === 'number' ? data.pageSize : this.pageSize
+        }
       } catch (e) {
         this.error = e.message || '加载失败'
       } finally {
         this.loading = false
       }
+    },
+    goPrev() {
+      if (this.page > 1) { this.page--; this.fetchList() }
+    },
+    goNext() {
+      const tp = this.totalPages
+      if (this.page < tp) { this.page++; this.fetchList() }
+    },
+    onPageSizeChange() {
+      if (this.pageSize < 1) this.pageSize = 1
+      this.page = 1
+      this.fetchList()
+    }
+  },
+  computed: {
+    totalPages() {
+      return Math.max(1, Math.ceil(this.total / this.pageSize))
     }
   },
   mounted() {
