@@ -25,3 +25,7 @@ dist-ssr
 
 # Node lock file
 package-lock.json
+
+# Go server build artifacts
+server/server
+server/dist/
