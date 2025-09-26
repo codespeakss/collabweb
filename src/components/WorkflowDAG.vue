@@ -1,10 +1,22 @@
 <template>
   <div class="workflow-dag" ref="dagContainer">
     <h2>Workflow DAG 状态展示</h2>
-    <svg :width="svgWidth" :height="svgHeight">
+    <div class="toolbar">
+      <button @click="resetDAG">重置</button>
+      <button @click="stepDAG">下一步</button>
+      <button @click="randomizeStatuses">随机状态</button>
+      <button @click="fetchWorkflow" title="从后端刷新">刷新</button>
+      <span class="sep"></span>
+      <label class="ctrl"><input type="checkbox" v-model="useAutoSize" /> 自动尺寸</label>
+      <template v-if="!useAutoSize">
+        <label class="ctrl">宽度 <input type="number" v-model.number="userWidth" min="400" step="50" style="width:90px" /></label>
+        <label class="ctrl">高度 <input type="number" v-model.number="userHeight" min="300" step="50" style="width:90px" /></label>
+      </template>
+    </div>
+    <svg :width="svgViewWidth" :height="svgViewHeight">
       <g v-for="(node, idx) in nodes" :key="node.id">
         <!-- 节点圆形 -->
-          <foreignObject :x="node.x - nodeWidth / 2" :y="node.y - nodeHeight / 2" :width="nodeWidth" :height="nodeHeight">
+          <foreignObject :x="posX(node) - nodeWidth / 2" :y="posY(node) - nodeHeight / 2" :width="nodeWidth" :height="nodeHeight">
             <div
               class="dag-node"
               :class="{ 'is-running': node.status === 'running' }"
@@ -22,15 +34,17 @@
       </g>
       <!-- 连线 -->
       <g v-for="edge in edges" :key="edge.from + '-' + edge.to">
-        <line
-          :x1="findNode(edge.from).x"
-          :y1="findNode(edge.from).y + nodeHeight / 2"
-          :x2="findNode(edge.to).x"
-          :y2="findNode(edge.to).y - nodeHeight / 2"
+        <path
+          :d="edgePath(edge)"
+          fill="none"
           :stroke="edgeColor(edge)"
           stroke-width="2"
-          :marker-end="`url(#${isEdgeTraversed(edge) ? 'arrow-green' : 'arrow-gray'})`"
+          :marker-end="edgeMarker(edge)"
+          :stroke-dasharray="edge.type === 'conditional' ? '6,6' : '0'"
         />
+        <text v-if="edge.label" :x="edgeLabelPos(edge).x" :y="edgeLabelPos(edge).y" text-anchor="middle" class="edge-label">
+          {{ edge.label }}
+        </text>
       </g>
       <defs>
         <marker id="arrow-green" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
@@ -39,8 +53,18 @@
         <marker id="arrow-gray" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
           <path d="M0,0 L6,3 L0,6 Z" fill="#bdbdbd" />
         </marker>
+        <marker id="arrow-red" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#f44336" />
+        </marker>
       </defs>
     </svg>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" :style="{background: statusColor('success')}"></span>成功</div>
+      <div class="legend-item"><span class="swatch" :style="{background: statusColor('running')}"></span>运行中</div>
+      <div class="legend-item"><span class="swatch" :style="{background: statusColor('failed')}"></span>失败</div>
+      <div class="legend-item"><span class="swatch" :style="{background: statusColor('pending')}"></span>等待</div>
+      <div class="legend-item"><span class="swatch dashed"></span>条件边</div>
+    </div>
     <!-- 悬浮提示：鼠标移入节点时展示 -->
     <div
       v-if="hoverNode"
@@ -68,8 +92,8 @@ export default {
   name: 'WorkflowDAG',
   data() {
     return {
-      svgWidth: 600,
-      svgHeight: 460,
+      svgWidth: 780,
+      svgHeight: 560,
       nodeRadius: 28,
       nodeWidth: 80,
       nodeHeight: 72,
@@ -77,36 +101,35 @@ export default {
       hoverNode: null,
       tooltipX: 0,
       tooltipY: 0,
-      // 示例 DAG 数据
-        nodes: [
-          { id: 'A', name: '任务A', x: 300, y: 40, status: 'success', desc: '数据准备' },
-          { id: 'B', name: '任务B', x: 180, y: 120, status: 'running', desc: '数据清洗' },
-          { id: 'C', name: '任务C', x: 420, y: 120, status: 'success', desc: '特征工程' },
-          { id: 'D', name: '任务D', x: 120, y: 220, status: 'pending', desc: '模型训练1' },
-          { id: 'E', name: '任务E', x: 240, y: 220, status: 'pending', desc: '模型训练2' },
-          { id: 'F', name: '任务F', x: 360, y: 220, status: 'failed', desc: '模型训练3' },
-          { id: 'G', name: '任务G', x: 480, y: 220, status: 'pending', desc: '模型训练4' },
-          { id: 'H', name: '任务H', x: 180, y: 320, status: 'success', desc: '评估1' },
-          { id: 'I', name: '任务I', x: 420, y: 320, status: 'pending', desc: '评估2' },
-          { id: 'J', name: '任务J', x: 300, y: 400, status: 'pending', desc: '结果汇总' },
-        ],
-      edges: [
-        { from: 'A', to: 'B' },
-        { from: 'A', to: 'C' },
-        { from: 'B', to: 'D' },
-        { from: 'B', to: 'E' },
-        { from: 'C', to: 'F' },
-        { from: 'C', to: 'G' },
-        { from: 'D', to: 'H' },
-        { from: 'E', to: 'H' },
-        { from: 'F', to: 'I' },
-        { from: 'G', to: 'I' },
-        { from: 'H', to: 'J' },
-        { from: 'I', to: 'J' },
-      ],
+      // 让布局更舒展的缩放与边距
+      layoutScaleX: 1.25,
+      layoutScaleY: 1.20,
+      canvasPadding: 60,
+      // UI 宽高控制
+      useAutoSize: true,
+      userWidth: 900,
+      userHeight: 600,
+      // 后端返回的 DAG 数据
+      nodes: [],
+      edges: [],
     };
   },
   methods: {
+    async fetchWorkflow() {
+      try {
+        const res = await fetch('/api/workflow');
+        if (!res.ok) throw new Error('请求失败: ' + res.status);
+        const data = await res.json();
+        // 直接赋值后端 nodes/edges
+        this.nodes = Array.isArray(data.nodes) ? data.nodes : [];
+        this.edges = Array.isArray(data.edges) ? data.edges : [];
+      } catch (err) {
+        console.error('加载工作流失败', err);
+      }
+    },
+    // 布局缩放后的坐标
+    posX(node) { return node.x * this.layoutScaleX + this.canvasPadding },
+    posY(node) { return node.y * this.layoutScaleY + this.canvasPadding },
     findNode(id) {
       return this.nodes.find(n => n.id === id);
     },
@@ -124,9 +147,80 @@ export default {
       const to = this.findNode(edge.to)
       return to ? to.status !== 'pending' : false
     },
-    // 根据是否遍历返回边颜色
+    // 根据状态返回边颜色：优先目标失败 -> 红；否则源成功 -> 绿；否则灰
     edgeColor(edge) {
-      return this.isEdgeTraversed(edge) ? '#4caf50' : '#bdbdbd'
+      const from = this.findNode(edge.from)
+      const to = this.findNode(edge.to)
+      if (to && to.status === 'failed') return '#f44336'
+      if (from && from.status === 'success') return '#4caf50'
+      return '#bdbdbd'
+    },
+    // 返回箭头 marker（与颜色一致）
+    edgeMarker(edge) {
+      const from = this.findNode(edge.from)
+      const to = this.findNode(edge.to)
+      if (to && to.status === 'failed') return 'url(#arrow-red)'
+      if (from && from.status === 'success') return 'url(#arrow-green)'
+      return 'url(#arrow-gray)'
+    },
+    // 动态选择端口：横向用左右侧，纵向用上下侧，斜向则混合
+    edgePorts(from, to) {
+      const fx = this.posX(from), fy = this.posY(from)
+      const tx = this.posX(to), ty = this.posY(to)
+      const dx = tx - fx
+      const dy = ty - fy
+      const horizThreshold = this.nodeHeight * 0.3
+      // 端口：中心点基础上向外偏移到节点边缘
+      const left   = { x: fx - this.nodeWidth / 2, y: fy }
+      const right  = { x: fx + this.nodeWidth / 2, y: fy }
+      const top    = { x: fx, y: fy - this.nodeHeight / 2 }
+      const bottom = { x: fx, y: fy + this.nodeHeight / 2 }
+      const toLeft   = { x: tx - this.nodeWidth / 2, y: ty }
+      const toRight  = { x: tx + this.nodeWidth / 2, y: ty }
+      const toTop    = { x: tx, y: ty - this.nodeHeight / 2 }
+      const toBottom = { x: tx, y: ty + this.nodeHeight / 2 }
+      if (Math.abs(dy) <= horizThreshold) {
+        // 基本横向
+        if (dx >= 0) return { p1: right, p2: toLeft }
+        return { p1: left, p2: toRight }
+      }
+      // 明显下游
+      if (dy > 0) return { p1: bottom, p2: toTop }
+      // 明显上游（不常见）
+      return { p1: top, p2: toBottom }
+    },
+    // 生成贝塞尔曲线路径，提升可读性
+    edgePath(edge) {
+      const from = this.findNode(edge.from)
+      const to = this.findNode(edge.to)
+      if (!from || !to) return ''
+      const { p1, p2 } = this.edgePorts(from, to)
+      const dx = p2.x - p1.x
+      const dy = p2.y - p1.y
+      // 控制点偏移：根据方向在 x 或 y 方向拉开一定弧度
+      const offset = 40
+      let c1 = { x: p1.x, y: p1.y }
+      let c2 = { x: p2.x, y: p2.y }
+      if (Math.abs(dy) <= this.nodeHeight * 0.3) {
+        // 横向：在 x 方向拉开
+        const s = dx >= 0 ? 1 : -1
+        c1 = { x: p1.x + s * offset, y: p1.y }
+        c2 = { x: p2.x - s * offset, y: p2.y }
+      } else {
+        // 纵向：在 y 方向拉开
+        const s = dy >= 0 ? 1 : -1
+        c1 = { x: p1.x, y: p1.y + s * offset }
+        c2 = { x: p2.x, y: p2.y - s * offset }
+      }
+      return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`
+    },
+    // 边标签位置（路径端点中点，稍微上移一点）
+    edgeLabelPos(edge) {
+      const from = this.findNode(edge.from)
+      const to = this.findNode(edge.to)
+      if (!from || !to) return { x: 0, y: 0 }
+      const { p1, p2 } = this.edgePorts(from, to)
+      return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 - 6 }
     },
     onNodeEnter(node, evt) {
       this.hoverNode = node
@@ -155,7 +249,67 @@ export default {
     selectNode(node) {
       this.selectedNode = node;
     },
+    // 控制条：重置、步进、随机
+    resetDAG() {
+      const defaults = {
+        A: 'success', B: 'running', C: 'success', D: 'pending', E: 'pending', F: 'failed', G: 'pending', H: 'success', I: 'pending', J: 'pending', K: 'pending', L: 'pending', M: 'pending', N: 'pending'
+      }
+      this.nodes.forEach(n => {
+        if (defaults[n.id]) n.status = defaults[n.id]; else n.status = 'pending'
+      })
+    },
+    stepDAG() {
+      // 简单的“下一步”策略：找到第一个 running -> success；然后解锁其直接子节点（pending 变 running）
+      const running = this.nodes.find(n => n.status === 'running')
+      if (running) {
+        running.status = 'success'
+        // 解锁子节点：若其所有前置均非 pending/failed，则置为 running
+        const children = this.edges.filter(e => e.from === running.id).map(e => this.findNode(e.to)).filter(Boolean)
+        children.forEach(ch => {
+          const parents = this.edges.filter(e => e.to === ch.id).map(e => this.findNode(e.from)).filter(Boolean)
+          const allReady = parents.every(p => p.status === 'success')
+          if (ch.status === 'pending' && allReady) ch.status = 'running'
+        })
+        return
+      }
+      // 若没有 running，则尝试将第一个 pending 且所有前置成功的节点置为 running
+      const candidate = this.nodes.find(n => {
+        if (n.status !== 'pending') return false
+        const parents = this.edges.filter(e => e.to === n.id).map(e => this.findNode(e.from)).filter(Boolean)
+        return parents.every(p => p.status === 'success')
+      })
+      if (candidate) candidate.status = 'running'
+    },
+    randomizeStatuses() {
+      const pool = ['pending', 'running', 'success', 'failed']
+      this.nodes.forEach(n => {
+        // 源头节点 A 保持成功，提高演示稳定性
+        if (n.id === 'A') { n.status = 'success'; return }
+        n.status = pool[Math.floor(Math.random() * pool.length)]
+      })
+    }
   },
+  computed: {
+    // 根据缩放后节点坐标自动计算画布尺寸
+    canvasWidth() {
+      const maxX = Math.max(...this.nodes.map(n => this.posX(n)), 0)
+      return Math.ceil(maxX + this.nodeWidth / 2 + this.canvasPadding)
+    },
+    canvasHeight() {
+      const maxY = Math.max(...this.nodes.map(n => this.posY(n)), 0)
+      return Math.ceil(maxY + this.nodeHeight / 2 + this.canvasPadding)
+    },
+    // 实际 SVG 采用的宽高（可切换自动或自定义）
+    svgViewWidth() {
+      return this.useAutoSize ? this.canvasWidth : this.userWidth
+    },
+    svgViewHeight() {
+      return this.useAutoSize ? this.canvasHeight : this.userHeight
+    }
+  },
+  mounted() {
+    this.fetchWorkflow()
+  }
 };
 </script>
 
@@ -163,10 +317,31 @@ export default {
 .workflow-dag {
   padding: 24px;
   position: relative; /* 作为 tooltip 的定位上下文 */
+  overflow: auto; /* 画布更大时允许滚动查看 */
 }
+.toolbar {
+  margin: 8px 0 12px;
+}
+.toolbar button + button { margin-left: 8px; }
+.toolbar .sep { display:inline-block; width: 16px; }
+.toolbar .ctrl { margin-left: 8px; font-size: 12px; color: #444; }
 svg {
   background: #fafafa;
   border: 1px solid #eee;
+}
+.legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.legend-item { font-size: 12px; color: #555; display: flex; align-items: center; }
+.legend .swatch {
+  width: 14px; height: 14px; border-radius: 3px; display: inline-block; margin-right: 6px; background: #bdbdbd;
+}
+.legend .swatch.dashed {
+  background: linear-gradient(90deg, #bdbdbd 0 40%, transparent 40% 60%, #bdbdbd 60% 100%);
 }
 .node-tooltip {
   position: absolute;
@@ -259,5 +434,14 @@ svg {
 }
 .dag-node-status {
   font-size: 11px;
+}
+.edge-label {
+  font-size: 11px;
+  fill: #444;
+  user-select: none;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3px; /* 白色描边，增强可读性 */
+  text-shadow: 0 1px 1px rgba(0,0,0,0.1);
 }
 </style>
