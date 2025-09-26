@@ -125,7 +125,9 @@ export default {
   methods: {
     async fetchWorkflow() {
       try {
-        const res = await fetch('/api/workflow');
+        const id = this.$route && this.$route.params ? this.$route.params.id : ''
+        const url = id ? `/api/workflows/${id}` : '/api/workflow'
+        const res = await fetch(url);
         if (!res.ok) throw new Error('请求失败: ' + res.status);
         const data = await res.json();
         // 直接赋值后端 nodes/edges
@@ -360,6 +362,13 @@ export default {
     },
     svgAttrHeight() {
       return this.isFullscreen ? '100%' : this.svgViewHeight
+    }
+  },
+  watch: {
+    '$route.params.id'(newId, oldId) {
+      if (newId !== oldId) {
+        this.fetchWorkflow()
+      }
     }
   },
   mounted() {

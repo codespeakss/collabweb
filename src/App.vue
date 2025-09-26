@@ -9,7 +9,7 @@
       <span class="sep">|</span>
       <router-link to="/devices">设备列表</router-link>
       <span class="sep">|</span>
-      <router-link to="/workflow">工作流</router-link>
+      <router-link to="/workflows">工作流</router-link>
       <span class="sep">|</span>
       <router-link to="/auth">登录/注册</router-link>
       <span class="sep">|</span>

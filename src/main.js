@@ -8,11 +8,15 @@ import DeviceList from './components/DeviceList.vue'
 import About from './components/About.vue'
 import WorkflowDAG from './components/WorkflowDAG.vue'
 import Auth from './components/Auth.vue'
+import WorkflowList from './components/WorkflowList.vue'
 
 const routes = [
 	{ path: '/', component: Home },
 	{ path: '/devices', component: DeviceList },
 	{ path: '/about', component: About },
+	{ path: '/workflows', component: WorkflowList },
+	{ path: '/workflow/:id', component: WorkflowDAG },
+	// 兼容旧地址，直接进入一个默认 DAG
 	{ path: '/workflow', component: WorkflowDAG },
 	{ path: '/auth', component: Auth }
 ]
