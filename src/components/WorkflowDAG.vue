@@ -40,7 +40,8 @@
           :stroke="edgeColor(edge)"
           stroke-width="2"
           :marker-end="edgeMarker(edge)"
-          :stroke-dasharray="edge.type === 'conditional' ? '6,6' : '0'"
+          :stroke-dasharray="edgeDasharray(edge)"
+          :class="edgeClasses(edge)"
         />
         <text v-if="edge.label" :x="edgeLabelPos(edge).x" :y="edgeLabelPos(edge).y" text-anchor="middle" class="edge-label">
           {{ edge.label }}
@@ -133,6 +134,24 @@ export default {
       } catch (err) {
         console.error('加载工作流失败', err);
       }
+    },
+    // 与被选中节点相连的边：用于判断是否需要“流水效果”
+    isEdgeConnectedToSelected(edge) {
+      if (!this.selectedNode) return false
+      return edge.from === this.selectedNode.id || edge.to === this.selectedNode.id
+    },
+    // 边的 class 绑定：当与选中节点相连时添加动画类
+    edgeClasses(edge) {
+      return { 'edge-flow': this.isEdgeConnectedToSelected(edge) }
+    },
+    // 决定边的虚线样式：
+    // - 条件边保持 6,6
+    // - 非条件边在被选中联通时给一个虚线，从而配合 dashoffset 动画产生“流水”效果
+    // - 其他情况为实线
+    edgeDasharray(edge) {
+      if (edge.type === 'conditional') return '6,6'
+      if (this.isEdgeConnectedToSelected(edge)) return '10,10'
+      return '0'
     },
     // 布局缩放后的坐标
     posX(node) { return node.x * this.layoutScaleX + this.canvasPadding },
@@ -511,5 +530,14 @@ svg:fullscreen {
   stroke: #ffffff;
   stroke-width: 3px; /* 白色描边，增强可读性 */
   text-shadow: 0 1px 1px rgba(0,0,0,0.1);
+}
+/* 边的“流水”动态效果 */
+.edge-flow {
+  stroke-linecap: round;
+  animation: edge-flow 1.2s linear infinite;
+}
+@keyframes edge-flow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -28; }
 }
 </style>
