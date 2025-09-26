@@ -9,6 +9,7 @@ import About from './components/About.vue'
 import WorkflowDAG from './components/WorkflowDAG.vue'
 import Auth from './components/Auth.vue'
 import WorkflowList from './components/WorkflowList.vue'
+import { startTitleScroller } from './utils/titleScroller.js'
 
 const routes = [
 	{ path: '/', component: Home },
@@ -28,4 +29,9 @@ const router = createRouter({
 
 const app = createApp(App)
 app.use(router)
+
+// Title scroller setup: always scroll only the base site title
+const baseTitle = 'CollabMesh: Workflow Orchestration for Teams. '
+startTitleScroller(baseTitle, { interval: 180, separator: ' • ' })
+
 app.mount('#app')
