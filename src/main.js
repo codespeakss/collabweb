@@ -9,6 +9,7 @@ import About from './components/About.vue'
 import WorkflowDAG from './components/WorkflowDAG.vue'
 import Auth from './components/Auth.vue'
 import WorkflowList from './components/WorkflowList.vue'
+import TechValidate from './components/TechValidate.vue'
 import { startTitleScroller } from './utils/titleScroller.js'
 
 const routes = [
@@ -19,14 +20,16 @@ const routes = [
 	{ path: '/workflow/:id', component: WorkflowDAG },
 	// 兼容旧地址，直接进入一个默认 DAG
 	{ path: '/workflow', component: WorkflowDAG },
-	{ path: '/auth', component: Auth }
+	{ path: '/auth', component: Auth },
+	{ path: '/tech-validate', component: TechValidate },
+	// 占位路由：无实际用途，便于后续追加路由时修改（保持末尾有元素）
+	{ path: '/__placeholder__', redirect: '/' }
 ]
 
 const router = createRouter({
 	history: createWebHistory(),
 	routes
 })
-
 const app = createApp(App)
 app.use(router)
 
