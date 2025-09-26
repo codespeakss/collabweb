@@ -11,6 +11,8 @@
       <span class="sep">|</span>
       <router-link to="/workflow">工作流</router-link>
       <span class="sep">|</span>
+      <router-link to="/auth">登录/注册</router-link>
+      <span class="sep">|</span>
       <router-link to="/about">关于</router-link>
     </div>
   </nav>

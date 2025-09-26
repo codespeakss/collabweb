@@ -1,4 +1,3 @@
-
 import { createApp } from 'vue'
 import './style.css'
 import App from './App.vue'
@@ -8,12 +7,14 @@ import Home from './components/Home.vue'
 import DeviceList from './components/DeviceList.vue'
 import About from './components/About.vue'
 import WorkflowDAG from './components/WorkflowDAG.vue'
+import Auth from './components/Auth.vue'
 
 const routes = [
 	{ path: '/', component: Home },
 	{ path: '/devices', component: DeviceList },
 	{ path: '/about', component: About },
-	{ path: '/workflow', component: WorkflowDAG }
+	{ path: '/workflow', component: WorkflowDAG },
+	{ path: '/auth', component: Auth }
 ]
 
 const router = createRouter({
