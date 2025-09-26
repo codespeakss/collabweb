@@ -22,6 +22,7 @@
               :class="{ 'is-running': node.status === 'running' }"
               :style="{ borderColor: statusColor(node.status), width: nodeWidth + 'px', height: nodeHeight + 'px' }"
               @click="selectNode(node)"
+              @mousedown.prevent.stop="onNodeMouseDown(node, $event)"
               @mouseenter="onNodeEnter(node, $event)"
               @mousemove="onNodeMove($event)"
               @mouseleave="onNodeLeave"
@@ -120,6 +121,12 @@ export default {
       edges: [],
       // 全屏状态
       isFullscreen: false,
+      // 拖拽状态
+      draggingNodeId: null,
+      dragOffsetXLogical: 0,
+      dragOffsetYLogical: 0,
+      isDragging: false,
+      dragMoved: false,
     };
   },
   methods: {
@@ -130,12 +137,180 @@ export default {
         const res = await fetch(url);
         if (!res.ok) throw new Error('请求失败: ' + res.status);
         const data = await res.json();
-        // 直接赋值后端 nodes/edges
-        this.nodes = Array.isArray(data.nodes) ? data.nodes : [];
-        this.edges = Array.isArray(data.edges) ? data.edges : [];
+        // 赋值后端 nodes/edges，但布局坐标在前端计算
+        const rawNodes = Array.isArray(data.nodes) ? data.nodes.map(n => ({ ...n })) : []
+        const rawEdges = Array.isArray(data.edges) ? data.edges.map(e => ({ ...e })) : []
+        const { nodes: laidOutNodes, edges: laidOutEdges } = this.computeLayout(rawNodes, rawEdges)
+        this.nodes = laidOutNodes
+        this.edges = laidOutEdges
       } catch (err) {
         console.error('加载工作流失败', err);
       }
+    },
+    // 将浏览器 client 坐标转换为 SVG viewBox 内部坐标
+    clientToSvgXY(evt) {
+      const svg = this.$refs.svgEl
+      if (!svg) return { x: 0, y: 0 }
+      const rect = svg.getBoundingClientRect()
+      const sx = (evt.clientX - rect.left) / rect.width
+      const sy = (evt.clientY - rect.top) / rect.height
+      // viewBox 与视口等比映射
+      const x = sx * this.svgViewWidth
+      const y = sy * this.svgViewHeight
+      return { x, y }
+    },
+    onNodeMouseDown(node, evt) {
+      this.selectedNode = node
+      const p = this.clientToSvgXY(evt)
+      // 计算指针相对节点中心的逻辑偏移（以便拖拽时保持相对位置）
+      const nodeCenterX = this.posX(node)
+      const nodeCenterY = this.posY(node)
+      const dxSvg = p.x - nodeCenterX
+      const dySvg = p.y - nodeCenterY
+      this.dragOffsetXLogical = dxSvg / this.layoutScaleX
+      this.dragOffsetYLogical = dySvg / this.layoutScaleY
+      this.draggingNodeId = node.id
+      this.isDragging = true
+      this.dragMoved = false
+    },
+    onMouseMove(evt) {
+      if (!this.isDragging || !this.draggingNodeId) return
+      const node = this.findNode(this.draggingNodeId)
+      if (!node) return
+      const p = this.clientToSvgXY(evt)
+      // 将指针位置换算为逻辑坐标，并减去按下时的逻辑偏移
+      const logicalX = (p.x - this.canvasPadding) / this.layoutScaleX - this.dragOffsetXLogical
+      const logicalY = (p.y - this.canvasPadding) / this.layoutScaleY - this.dragOffsetYLogical
+      node.x = logicalX
+      node.y = logicalY
+      this.dragMoved = true
+    },
+    onMouseUp() {
+      if (!this.isDragging) return
+      this.isDragging = false
+      this.draggingNodeId = null
+      this.dragOffsetXLogical = 0
+      this.dragOffsetYLogical = 0
+      // 可在此处触发持久化（如需要把新坐标保存到本地或服务端）
+    },
+    // 基于有向无环图的简单前端布局：
+    // 1) 拓扑排序并按最长路径分层
+    // 2) 每一层的节点横向均匀分布，层与层之间纵向间隔固定
+    // 3) 生成的 x/y 覆盖服务端坐标，确保布局来源于前端
+    computeLayout(nodes, edges) {
+      // 构建索引
+      const idToNode = new Map(nodes.map(n => [n.id, n]))
+      // 过滤掉在 nodes 里不存在的边
+      const safeEdges = edges.filter(e => idToNode.has(e.from) && idToNode.has(e.to))
+      // 统计入度与父子关系
+      const indeg = new Map()
+      const parents = new Map()
+      const children = new Map()
+      nodes.forEach(n => {
+        indeg.set(n.id, 0)
+        parents.set(n.id, [])
+        children.set(n.id, [])
+      })
+      safeEdges.forEach(e => {
+        indeg.set(e.to, (indeg.get(e.to) || 0) + 1)
+        parents.get(e.to).push(e.from)
+        children.get(e.from).push(e.to)
+      })
+      // Kahn 拓扑 + 最长路径分层
+      const queue = []
+      indeg.forEach((v, k) => { if (v === 0) queue.push(k) })
+      const order = []
+      const level = new Map()
+      queue.forEach(id => level.set(id, 0))
+      while (queue.length) {
+        const u = queue.shift()
+        order.push(u)
+        const lv = level.get(u) || 0
+        for (const v of (children.get(u) || [])) {
+          // 以最长父路径为层级
+          level.set(v, Math.max((level.get(v) || 0), lv + 1))
+          indeg.set(v, (indeg.get(v) || 0) - 1)
+          if (indeg.get(v) === 0) queue.push(v)
+        }
+      }
+      // 若存在环，fallback：将未出现在 order 的节点追加并给默认层
+      if (order.length < nodes.length) {
+        nodes.forEach(n => {
+          if (!order.includes(n.id)) {
+            order.push(n.id)
+            if (!level.has(n.id)) level.set(n.id, 0)
+          }
+        })
+      }
+      // 分层分组
+      const layers = []
+      nodes.forEach(n => {
+        const lv = level.get(n.id) || 0
+        if (!layers[lv]) layers[lv] = []
+        layers[lv].push(n)
+      })
+      // 初始层内顺序：按原有 x 提示或 id，提供稳定基线
+      layers.forEach(arr => arr.sort((a, b) => ((a.x ?? 0) - (b.x ?? 0)) || a.id.localeCompare(b.id)))
+      // 使用迭代中位数（barycenter）启发式，进行多轮上下扫，尽量减少交叉
+      const iterations = Math.min(6, layers.length * 2 + 2)
+      const median = (arr) => {
+        if (!arr.length) return Number.POSITIVE_INFINITY
+        const s = arr.slice().sort((a, b) => a - b)
+        const m = Math.floor(s.length / 2)
+        return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+      }
+      const indexMapOf = (layer) => new Map(layer.map((n, i) => [n.id, i]))
+      for (let it = 0; it < iterations; it++) {
+        // top-down
+        for (let li = 1; li < layers.length; li++) {
+          const prev = layers[li - 1]
+          const prevIndex = indexMapOf(prev)
+          const current = layers[li]
+          // 稳定排序：以中位数为主键，以当前索引为次键
+          const currentIndex = indexMapOf(current)
+          current.sort((a, b) => {
+            const pa = parents.get(a.id) || []
+            const pb = parents.get(b.id) || []
+            const ma = median(pa.map(p => prevIndex.get(p)).filter(v => v !== undefined))
+            const mb = median(pb.map(p => prevIndex.get(p)).filter(v => v !== undefined))
+            if (ma !== mb) return ma - mb
+            return (currentIndex.get(a.id) ?? 0) - (currentIndex.get(b.id) ?? 0)
+          })
+        }
+        // bottom-up
+        for (let li = layers.length - 2; li >= 0; li--) {
+          const next = layers[li + 1]
+          const nextIndex = indexMapOf(next)
+          const current = layers[li]
+          const currentIndex = indexMapOf(current)
+          current.sort((a, b) => {
+            const ca = children.get(a.id) || []
+            const cb = children.get(b.id) || []
+            const ma = median(ca.map(c => nextIndex.get(c)).filter(v => v !== undefined))
+            const mb = median(cb.map(c => nextIndex.get(c)).filter(v => v !== undefined))
+            if (ma !== mb) return ma - mb
+            return (currentIndex.get(a.id) ?? 0) - (currentIndex.get(b.id) ?? 0)
+          })
+        }
+      }
+      // 布局参数
+      const layerGap = Math.max(this.nodeHeight * 1.8, 120)
+      const nodeGap = Math.max(this.nodeWidth * 1.8, 140)
+      const paddingX = this.canvasPadding
+      const paddingY = this.canvasPadding
+      const maxLayerSize = Math.max(1, ...layers.map(arr => arr.length))
+      // 逐层定位
+      layers.forEach((arr, li) => {
+        // 水平居中：以最大层宽为参考，当前层在其中居中摆放
+        const baseX = paddingX + ((maxLayerSize - arr.length) * nodeGap) / 2
+        const y = paddingY + li * layerGap
+        arr.forEach((n, idx) => {
+          // 将布局写入 n.x/n.y（前端专用）
+          n.x = baseX + (idx * nodeGap)
+          n.y = y
+        })
+      })
+      return { nodes, edges: safeEdges }
     },
     // 与被选中节点相连的边：用于判断是否需要“流水效果”
     isEdgeConnectedToSelected(edge) {
@@ -374,9 +549,14 @@ export default {
   mounted() {
     this.fetchWorkflow()
     document.addEventListener('fullscreenchange', this.onFsChange)
+    // 全局监听拖拽
+    document.addEventListener('mousemove', this.onMouseMove)
+    document.addEventListener('mouseup', this.onMouseUp)
   },
   beforeUnmount() {
     document.removeEventListener('fullscreenchange', this.onFsChange)
+    document.removeEventListener('mousemove', this.onMouseMove)
+    document.removeEventListener('mouseup', this.onMouseUp)
   }
 };
 </script>
