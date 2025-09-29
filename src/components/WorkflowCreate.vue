@@ -400,9 +400,7 @@ export default {
         id: `N${this.nodeSeq}`,
         name: `节点${this.nodeSeq}`,
         status: 'pending',
-        desc: '新建节点',
-        x: position.x,
-        y: position.y
+        desc: '新建节点'
       }
       this.previewNodes.push(newNode)
       this.syncToJSON()
@@ -434,8 +432,12 @@ export default {
       this.editingNode = null
     },
     syncToJSON() {
-      // 将可视化编辑的结果同步到 JSON 文本
-      this.nodesText = JSON.stringify(this.previewNodes, null, 2)
+      // 将可视化编辑的结果同步到 JSON 文本，过滤掉布局坐标
+      const cleanNodes = this.previewNodes.map(node => {
+        const { x, y, ...cleanNode } = node
+        return cleanNode
+      })
+      this.nodesText = JSON.stringify(cleanNodes, null, 2)
       this.edgesText = JSON.stringify(this.previewEdges, null, 2)
     },
     // 工具栏方法
