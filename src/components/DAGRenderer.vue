@@ -1,14 +1,19 @@
 <template>
   <div class="dag-renderer" ref="dagContainer">
-    <svg ref="svgEl" :width="svgAttrWidth" :height="svgAttrHeight" :viewBox="`0 0 ${svgViewWidth} ${svgViewHeight}`">
+    <svg ref="svgEl" :width="svgAttrWidth" :height="svgAttrHeight" :viewBox="`0 0 ${svgViewWidth} ${svgViewHeight}`" @click="onCanvasClick">
       <g v-for="(node, idx) in computedNodes" :key="node.id">
         <!-- 节点圆形 -->
         <foreignObject :x="posX(node) - nodeWidth / 2" :y="posY(node) - nodeHeight / 2" :width="nodeWidth" :height="nodeHeight">
           <div
             class="dag-node"
-            :class="{ 'is-running': node.status === 'running' }"
+            :class="{ 
+              'is-running': node.status === 'running',
+              'connecting-from': connectingMode && connectingFrom === node.id,
+              'connecting-target': connectingMode && connectingFrom && connectingFrom !== node.id
+            }"
             :style="{ borderColor: statusColor(node.status), width: nodeWidth + 'px', height: nodeHeight + 'px' }"
             @click="selectNode(node)"
+            @dblclick="onNodeDoubleClick(node)"
             @mouseenter="onNodeEnter(node, $event)"
             @mousemove="onNodeMove($event)"
             @mouseleave="onNodeLeave"
@@ -69,7 +74,10 @@ export default {
     nodes: { type: Array, default: () => [] },
     edges: { type: Array, default: () => [] },
     width: { type: Number, default: 600 },
-    height: { type: Number, default: 400 }
+    height: { type: Number, default: 400 },
+    editable: { type: Boolean, default: false },
+    connectingMode: { type: Boolean, default: false },
+    connectingFrom: { type: String, default: null }
   },
   data() {
     return {
@@ -317,6 +325,23 @@ export default {
     },
     selectNode(node) {
       this.selectedNode = node;
+      if (this.editable) {
+        this.$emit('node-select', node);
+      }
+    },
+    onNodeDoubleClick(node) {
+      if (this.editable) {
+        this.$emit('node-edit', node);
+      }
+    },
+    onCanvasClick(event) {
+      if (this.editable && event.target === this.$refs.svgEl) {
+        const p = this.clientToSvgXY(event);
+        // 将 SVG 坐标转换为逻辑坐标
+        const logicalX = (p.x - this.canvasPadding) / this.layoutScaleX;
+        const logicalY = (p.y - this.canvasPadding) / this.layoutScaleY;
+        this.$emit('canvas-click', { x: logicalX, y: logicalY });
+      }
     }
   },
   computed: {
@@ -459,5 +484,20 @@ svg {
 @keyframes edge-flow {
   from { stroke-dashoffset: 0; }
   to { stroke-dashoffset: -28; }
+}
+
+/* 连线模式样式 */
+.dag-node.connecting-from {
+  border-color: #2196f3 !important;
+  box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.3) !important;
+}
+
+.dag-node.connecting-target {
+  border-color: #4caf50 !important;
+  cursor: crosshair !important;
+}
+
+.dag-node.connecting-target:hover {
+  box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.3) !important;
 }
 </style>
