@@ -3,8 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 )
 
 type Device struct {
@@ -12,25 +16,95 @@ type Device struct {
 	Name       string `json:"name"`
 	Type       string `json:"type"`
 	LastOnline int64  `json:"lastOnline"` // 最近在线时间戳
+	CreatedAt  int64  `json:"createdAt"`  // 创建时间戳
+	UpdatedAt  int64  `json:"updatedAt"`  // 更新时间戳
 }
 
-func mockDevices() []Device {
-	devices := make([]Device, 300)
+type CreateDeviceRequest struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+type UpdateDeviceRequest struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// 内存存储设备数据
+var (
+	devicesMu    sync.RWMutex
+	devicesStore = make(map[string]Device)
+	deviceSeq    = 0
+)
+
+func init() {
+	// 初始化一些示例设备
 	types := []string{"Sensor", "Actuator", "Gateway", "Camera"}
-	for i := 0; i < 300; i++ {
-		devices[i] = Device{
-			ID:         "d" + fmt.Sprintf("%012d", i+1),
+	now := time.Now().Unix()
+	for i := 0; i < 50; i++ {
+		deviceSeq++
+		id := fmt.Sprintf("d%012d", deviceSeq)
+		device := Device{
+			ID:         id,
 			Name:       fmt.Sprintf("设备%03d", i+1),
 			Type:       types[i%len(types)],
-			LastOnline: 1695638400 + int64(i*60),
+			LastOnline: now - int64(i*60),
+			CreatedAt:  now - int64(i*3600),
+			UpdatedAt:  now - int64(i*60),
 		}
+		devicesStore[id] = device
 	}
-	return devices
 }
 
-func devicesHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	devices := mockDevices()
+// GET /api/v1/devices (list), POST /api/v1/devices (create)
+func devicesCollectionHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		getDevicesList(w, r)
+	case http.MethodPost:
+		createDevice(w, r)
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+	}
+}
+
+// GET /api/v1/devices/{id}, PUT /api/v1/devices/{id}, DELETE /api/v1/devices/{id}
+func deviceResourceHandler(w http.ResponseWriter, r *http.Request) {
+	// 提取设备 ID
+	path := r.URL.Path
+	prefix := "/api/v1/devices/"
+	if !strings.HasPrefix(path, prefix) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Not found"})
+		return
+	}
+	id := strings.TrimPrefix(path, prefix)
+	if id == "" || strings.Contains(id, "/") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid device ID"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		getDevice(w, r, id)
+	case http.MethodPut:
+		updateDevice(w, r, id)
+	case http.MethodDelete:
+		deleteDevice(w, r, id)
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+	}
+}
+
+func getDevicesList(w http.ResponseWriter, r *http.Request) {
+	devicesMu.RLock()
+	defer devicesMu.RUnlock()
+
+	// 转换为切片
+	devices := make([]Device, 0, len(devicesStore))
+	for _, device := range devicesStore {
+		devices = append(devices, device)
+	}
+
 	// 分页参数
 	page := 1
 	pageSize := 20
@@ -45,6 +119,7 @@ func devicesHandler(w http.ResponseWriter, r *http.Request) {
 			pageSize = v
 		}
 	}
+
 	start := (page - 1) * pageSize
 	end := start + pageSize
 	if start > len(devices) {
@@ -54,12 +129,118 @@ func devicesHandler(w http.ResponseWriter, r *http.Request) {
 		end = len(devices)
 	}
 	paged := devices[start:end]
-	// 返回分页数据和总数
+
 	resp := map[string]interface{}{
 		"devices":  paged,
 		"total":    len(devices),
 		"page":     page,
 		"pageSize": pageSize,
 	}
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func createDevice(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	var req CreateDeviceRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
+		return
+	}
+
+	// 验证必填字段
+	if strings.TrimSpace(req.Name) == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Device name is required"})
+		return
+	}
+	if strings.TrimSpace(req.Type) == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Device type is required"})
+		return
+	}
+
+	devicesMu.Lock()
+	defer devicesMu.Unlock()
+
+	// 生成新设备 ID
+	deviceSeq++
+	id := fmt.Sprintf("d%012d", deviceSeq)
+	now := time.Now().Unix()
+
+	device := Device{
+		ID:         id,
+		Name:       strings.TrimSpace(req.Name),
+		Type:       strings.TrimSpace(req.Type),
+		LastOnline: now,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	devicesStore[id] = device
+	writeJSON(w, http.StatusCreated, device)
+}
+
+func getDevice(w http.ResponseWriter, r *http.Request, id string) {
+	devicesMu.RLock()
+	defer devicesMu.RUnlock()
+
+	device, exists := devicesStore[id]
+	if !exists {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Device not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, device)
+}
+
+func updateDevice(w http.ResponseWriter, r *http.Request, id string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	var req UpdateDeviceRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
+		return
+	}
+
+	devicesMu.Lock()
+	defer devicesMu.Unlock()
+
+	device, exists := devicesStore[id]
+	if !exists {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Device not found"})
+		return
+	}
+
+	// 更新字段
+	if strings.TrimSpace(req.Name) != "" {
+		device.Name = strings.TrimSpace(req.Name)
+	}
+	if strings.TrimSpace(req.Type) != "" {
+		device.Type = strings.TrimSpace(req.Type)
+	}
+	device.UpdatedAt = time.Now().Unix()
+
+	devicesStore[id] = device
+	writeJSON(w, http.StatusOK, device)
+}
+
+func deleteDevice(w http.ResponseWriter, r *http.Request, id string) {
+	devicesMu.Lock()
+	defer devicesMu.Unlock()
+
+	_, exists := devicesStore[id]
+	if !exists {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Device not found"})
+		return
+	}
+
+	delete(devicesStore, id)
+	writeJSON(w, http.StatusNoContent, nil)
 }

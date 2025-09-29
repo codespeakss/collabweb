@@ -133,7 +133,7 @@ export default {
     async fetchWorkflow() {
       try {
         const id = this.$route && this.$route.params ? this.$route.params.id : ''
-        const url = id ? `/api/workflows/${id}` : '/api/workflow'
+        const url = id ? `/api/v1/workflows/${id}` : '/api/v1/workflows'
         const res = await fetch(url);
         if (!res.ok) throw new Error('请求失败: ' + res.status);
         const data = await res.json();

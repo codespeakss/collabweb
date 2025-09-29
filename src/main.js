@@ -10,6 +10,7 @@ import WorkflowDAG from './components/WorkflowDAG.vue'
 import Auth from './components/Auth.vue'
 import WorkflowList from './components/WorkflowList.vue'
 import TechValidate from './components/TechValidate.vue'
+import WorkflowCreate from './components/WorkflowCreate.vue'
 import { startTitleScroller } from './utils/titleScroller.js'
 
 const routes = [
@@ -17,6 +18,7 @@ const routes = [
 	{ path: '/devices', component: DeviceList },
 	{ path: '/about', component: About },
 	{ path: '/workflows', component: WorkflowList },
+	{ path: '/workflows/create', component: WorkflowCreate },
 	{ path: '/workflow/:id', component: WorkflowDAG },
 	// 兼容旧地址，直接进入一个默认 DAG
 	{ path: '/workflow', component: WorkflowDAG },
@@ -38,3 +40,4 @@ const baseTitle = 'CollabMesh: Workflow Orchestration for Teams. '
 startTitleScroller(baseTitle, { interval: 180, separator: ' • ' })
 
 app.mount('#app')
+

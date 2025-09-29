@@ -3,6 +3,7 @@
     <h2>工作流列表</h2>
     <div class="toolbar">
       <button @click="fetchList">刷新</button>
+      <router-link class="btn" to="/workflows/create" style="margin-left:8px">创建 DAG</router-link>
       <span class="sep"></span>
       <label class="ctrl">每页 <input type="number" min="1" step="1" v-model.number="pageSize" @change="onPageSizeChange" style="width:72px"/></label>
     </div>
@@ -49,7 +50,7 @@ export default {
       this.loading = true
       this.error = ''
       try {
-        const res = await fetch(`/api/workflows?page=${this.page}&pageSize=${this.pageSize}`)
+        const res = await fetch(`/api/v1/workflows?page=${this.page}&pageSize=${this.pageSize}`)
         if (!res.ok) throw new Error('请求失败: ' + res.status)
         const data = await res.json()
         // 兼容老格式（数组）与新分页格式（对象）

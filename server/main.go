@@ -5,20 +5,19 @@ import (
 )
 
 func main() {
-    // 设备列表
-    http.HandleFunc("/api/devices", devicesHandler)
+    // API v1 - 设备资源
+    http.HandleFunc("/api/v1/devices", devicesCollectionHandler)     // GET list, POST create
+    http.HandleFunc("/api/v1/devices/", deviceResourceHandler)      // GET/PUT/DELETE by id
 
-    // 认证相关
-    http.HandleFunc("/api/auth/send-code", sendCodeHandler)
-    http.HandleFunc("/api/auth/login", loginHandler)
-    http.HandleFunc("/api/auth/register", registerHandler)
-    http.HandleFunc("/api/auth/qr-ticket", qrTicketHandler)
+    // API v1 - 认证资源
+    http.HandleFunc("/api/v1/auth/sessions", authSessionsHandler)   // POST login, DELETE logout
+    http.HandleFunc("/api/v1/auth/users", authUsersHandler)        // POST register
+    http.HandleFunc("/api/v1/auth/codes", authCodesHandler)        // POST send verification code
+    http.HandleFunc("/api/v1/auth/qr-tickets", authQRTicketsHandler) // POST generate QR ticket
 
-    // 工作流（兼容旧接口）
-    http.HandleFunc("/api/workflow", workflowHandler)
-    // 工作流列表与详情
-    http.HandleFunc("/api/workflows", workflowsListHandler)   // GET list
-    http.HandleFunc("/api/workflows/", workflowDetailHandler) // GET detail by id
+    // API v1 - 工作流资源
+    http.HandleFunc("/api/v1/workflows", workflowsCollectionHandler) // GET list, POST create
+    http.HandleFunc("/api/v1/workflows/", workflowResourceHandler)   // GET/PUT/DELETE by id
 
     _ = http.ListenAndServe(":8080", nil)
 }

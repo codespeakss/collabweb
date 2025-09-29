@@ -49,7 +49,7 @@ const total = ref(0)
 async function fetchDevices(page = 1) {
   error.value = ''
   try {
-    const res = await fetch(`/api/devices?page=${page}&pageSize=${pageSize}`)
+    const res = await fetch(`/api/v1/devices?page=${page}&pageSize=${pageSize}`)
     if (!res.ok) throw new Error('服务端错误')
     const data = await res.json()
     devices.value = data.devices || []

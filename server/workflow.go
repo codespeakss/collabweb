@@ -1,10 +1,13 @@
 package main
 
 import (
+    "encoding/json"
     "fmt"
+    "io"
     "net/http"
     "strconv"
     "strings"
+    "sync"
 )
 
 type WorkflowNode struct {
@@ -417,6 +420,22 @@ type WorkflowResponse struct {
     Edges []WorkflowEdge `json:"edges"`
 }
 
+// ---- In-memory store for user-created workflows ----
+var (
+    createdMu        sync.RWMutex
+    createdWorkflows = map[string]WorkflowResponse{}
+    createdSummaries = map[string]WorkflowSummary{}
+    createdSeq       = 0
+)
+
+type CreateWorkflowRequest struct {
+    ID     string           `json:"id"`
+    Name   string           `json:"name"`
+    Desc   string           `json:"desc"`
+    Nodes  []WorkflowNode   `json:"nodes"`
+    Edges  []WorkflowEdge   `json:"edges"`
+}
+
 // Workflow summary for listing
 type WorkflowSummary struct {
     ID     string `json:"id"`
@@ -511,14 +530,56 @@ func mockWorkflowList() []WorkflowSummary {
     return list
 }
 
-// GET /api/workflows -> list
-func workflowsListHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
-        writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+// GET /api/v1/workflows (list), POST /api/v1/workflows (create)
+func workflowsCollectionHandler(w http.ResponseWriter, r *http.Request) {
+    switch r.Method {
+    case http.MethodGet:
+        getWorkflowsList(w, r)
+    case http.MethodPost:
+        createWorkflow(w, r)
+    default:
+        writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+    }
+}
+
+// GET /api/v1/workflows/{id}, PUT /api/v1/workflows/{id}, DELETE /api/v1/workflows/{id}
+func workflowResourceHandler(w http.ResponseWriter, r *http.Request) {
+    // 提取工作流 ID
+    path := r.URL.Path
+    prefix := "/api/v1/workflows/"
+    if !strings.HasPrefix(path, prefix) {
+        writeJSON(w, http.StatusNotFound, map[string]string{"error": "Not found"})
         return
     }
+    id := strings.TrimPrefix(path, prefix)
+    if id == "" || strings.Contains(id, "/") {
+        writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid workflow ID"})
+        return
+    }
+
+    switch r.Method {
+    case http.MethodGet:
+        getWorkflow(w, r, id)
+    case http.MethodPut:
+        updateWorkflow(w, r, id)
+    case http.MethodDelete:
+        deleteWorkflow(w, r, id)
+    default:
+        writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+    }
+}
+
+
+func getWorkflowsList(w http.ResponseWriter, r *http.Request) {
     list := mockWorkflowList()
-    // 分页参数，参考 devices 接口
+    // 合并用户创建的工作流摘要
+    createdMu.RLock()
+    for _, s := range createdSummaries {
+        list = append(list, s)
+    }
+    createdMu.RUnlock()
+
+    // 分页参数
     page := 1
     pageSize := 20
     q := r.URL.Query()
@@ -532,6 +593,7 @@ func workflowsListHandler(w http.ResponseWriter, r *http.Request) {
             pageSize = v
         }
     }
+
     start := (page - 1) * pageSize
     end := start + pageSize
     if start > len(list) {
@@ -541,6 +603,7 @@ func workflowsListHandler(w http.ResponseWriter, r *http.Request) {
         end = len(list)
     }
     paged := list[start:end]
+
     resp := map[string]interface{}{
         "workflows": paged,
         "total":     len(list),
@@ -550,26 +613,213 @@ func workflowsListHandler(w http.ResponseWriter, r *http.Request) {
     writeJSON(w, http.StatusOK, resp)
 }
 
-// GET /api/workflows/{id} -> detail
-func workflowDetailHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
-        writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+func createWorkflow(w http.ResponseWriter, r *http.Request) {
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
         return
     }
-    // Expect path like /api/workflows/{id}
-    path := r.URL.Path
-    // Trim prefix
-    prefix := "/api/workflows/"
-    if !strings.HasPrefix(path, prefix) {
-        writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+
+    var req CreateWorkflowRequest
+    if err := json.Unmarshal(body, &req); err != nil {
+        writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
         return
     }
-    id := strings.TrimPrefix(path, prefix)
-    if id == "" || strings.Contains(id, "/") {
-        writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+
+    // 验证必填字段
+    if len(req.Nodes) == 0 {
+        writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "At least one node is required"})
         return
     }
-    // Return a DAG based on id (mock variants)
+
+    // 验证节点 ID 唯一性
+    ids := map[string]bool{}
+    for i, n := range req.Nodes {
+        if strings.TrimSpace(n.ID) == "" {
+            writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Node ID is required"})
+            return
+        }
+        if ids[n.ID] {
+            writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Duplicate node ID: " + n.ID})
+            return
+        }
+        ids[n.ID] = true
+        // 设置默认状态
+        if n.Status == "" {
+            req.Nodes[i].Status = "pending"
+        }
+    }
+
+    // 过滤无效边
+    edgeOK := make([]WorkflowEdge, 0, len(req.Edges))
+    for _, e := range req.Edges {
+        if e.From == "" || e.To == "" {
+            continue
+        }
+        if !ids[e.From] || !ids[e.To] {
+            continue
+        }
+        edgeOK = append(edgeOK, e)
+    }
+
+    createdMu.Lock()
+    defer createdMu.Unlock()
+
+    // 生成或验证 ID
+    id := strings.TrimSpace(req.ID)
+    if id == "" {
+        createdSeq++
+        id = fmt.Sprintf("user-wf-%d", createdSeq)
+    }
+
+    // 检查 ID 冲突
+    if _, ok := createdWorkflows[id]; ok {
+        writeJSON(w, http.StatusConflict, map[string]string{"error": "Workflow ID already exists"})
+        return
+    }
+
+    // 创建工作流
+    wf := WorkflowResponse{Nodes: req.Nodes, Edges: edgeOK}
+    createdWorkflows[id] = wf
+
+    name := strings.TrimSpace(req.Name)
+    if name == "" {
+        name = id
+    }
+    desc := strings.TrimSpace(req.Desc)
+    status := "pending"
+    if len(req.Nodes) > 0 {
+        status = req.Nodes[0].Status
+    }
+
+    createdSummaries[id] = WorkflowSummary{
+        ID:     id,
+        Name:   name,
+        Desc:   desc,
+        Status: status,
+    }
+
+    // 返回创建的资源
+    response := map[string]interface{}{
+        "id":       id,
+        "name":     name,
+        "desc":     desc,
+        "status":   status,
+        "nodes":    len(req.Nodes),
+        "edges":    len(edgeOK),
+    }
+    writeJSON(w, http.StatusCreated, response)
+}
+
+func getWorkflow(w http.ResponseWriter, r *http.Request, id string) {
+    // 优先返回用户创建的工作流
+    createdMu.RLock()
+    if wf, ok := createdWorkflows[id]; ok {
+        createdMu.RUnlock()
+        writeJSON(w, http.StatusOK, wf)
+        return
+    }
+    createdMu.RUnlock()
+
+    // 回退到 mock 数据
     wf := mockWorkflowByID(id)
     writeJSON(w, http.StatusOK, wf)
+}
+
+func updateWorkflow(w http.ResponseWriter, r *http.Request, id string) {
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+        return
+    }
+
+    var req CreateWorkflowRequest
+    if err := json.Unmarshal(body, &req); err != nil {
+        writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
+        return
+    }
+
+    createdMu.Lock()
+    defer createdMu.Unlock()
+
+    // 检查工作流是否存在（仅支持更新用户创建的工作流）
+    if _, ok := createdWorkflows[id]; !ok {
+        writeJSON(w, http.StatusNotFound, map[string]string{"error": "Workflow not found or not editable"})
+        return
+    }
+
+    // 验证节点（与创建时相同的逻辑）
+    if len(req.Nodes) == 0 {
+        writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "At least one node is required"})
+        return
+    }
+
+    ids := map[string]bool{}
+    for i, n := range req.Nodes {
+        if strings.TrimSpace(n.ID) == "" {
+            writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Node ID is required"})
+            return
+        }
+        if ids[n.ID] {
+            writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Duplicate node ID: " + n.ID})
+            return
+        }
+        ids[n.ID] = true
+        if n.Status == "" {
+            req.Nodes[i].Status = "pending"
+        }
+    }
+
+    // 过滤无效边
+    edgeOK := make([]WorkflowEdge, 0, len(req.Edges))
+    for _, e := range req.Edges {
+        if e.From == "" || e.To == "" {
+            continue
+        }
+        if !ids[e.From] || !ids[e.To] {
+            continue
+        }
+        edgeOK = append(edgeOK, e)
+    }
+
+    // 更新工作流
+    wf := WorkflowResponse{Nodes: req.Nodes, Edges: edgeOK}
+    createdWorkflows[id] = wf
+
+    // 更新摘要
+    name := strings.TrimSpace(req.Name)
+    if name == "" {
+        name = id
+    }
+    desc := strings.TrimSpace(req.Desc)
+    status := "pending"
+    if len(req.Nodes) > 0 {
+        status = req.Nodes[0].Status
+    }
+
+    createdSummaries[id] = WorkflowSummary{
+        ID:     id,
+        Name:   name,
+        Desc:   desc,
+        Status: status,
+    }
+
+    writeJSON(w, http.StatusOK, wf)
+}
+
+func deleteWorkflow(w http.ResponseWriter, r *http.Request, id string) {
+    createdMu.Lock()
+    defer createdMu.Unlock()
+
+    // 检查工作流是否存在（仅支持删除用户创建的工作流）
+    if _, ok := createdWorkflows[id]; !ok {
+        writeJSON(w, http.StatusNotFound, map[string]string{"error": "Workflow not found or not deletable"})
+        return
+    }
+
+    // 删除工作流和摘要
+    delete(createdWorkflows, id)
+    delete(createdSummaries, id)
+
+    writeJSON(w, http.StatusNoContent, nil)
 }

@@ -31,7 +31,7 @@ async function sendCode() {
   }
   loading.value = true
   try {
-    const res = await fetch('/api/auth/send-code', {
+    const res = await fetch('/api/v1/auth/codes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account: emailOrPhone.value, channel: 'email' })
@@ -57,7 +57,7 @@ async function doLogin() {
   }
   loading.value = true
   try {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch('/api/v1/auth/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account: emailOrPhone.value, password: password.value })
@@ -93,7 +93,7 @@ async function doRegister() {
   }
   loading.value = true
   try {
-    const res = await fetch('/api/auth/register', {
+    const res = await fetch('/api/v1/auth/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account: emailOrPhone.value, password: password.value, code: verifyCode.value })
