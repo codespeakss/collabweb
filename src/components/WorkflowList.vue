@@ -5,6 +5,19 @@
       <button @click="fetchList">刷新</button>
       <router-link class="btn" to="/workflows/create" style="margin-left:8px">创建 DAG</router-link>
       <span class="sep"></span>
+      <label class="ctrl">排序字段
+        <select v-model="sortBy" @change="onSortChange">
+          <option value="name">名称</option>
+          <option value="status">状态</option>
+          <option value="id">ID</option>
+        </select>
+      </label>
+      <label class="ctrl">方向
+        <select v-model="order" @change="onSortChange">
+          <option value="desc">降序</option>
+          <option value="asc">升序</option>
+        </select>
+      </label>
       <label class="ctrl">每页 <input type="number" min="1" step="1" v-model.number="pageSize" @change="onPageSizeChange" style="width:72px"/></label>
     </div>
     <div v-if="loading" class="hint">加载中...</div>
@@ -40,6 +53,8 @@ export default {
       workflows: [],
       page: 1,
       pageSize: 10,
+      sortBy: 'name',
+      order: 'desc',
       total: 0,
       loading: false,
       error: ''
@@ -50,7 +65,13 @@ export default {
       this.loading = true
       this.error = ''
       try {
-        const res = await fetch(`/api/v1/workflows?page=${this.page}&pageSize=${this.pageSize}`)
+        const qs = new URLSearchParams({
+          page: String(this.page),
+          page_size: String(this.pageSize),
+          sort_by: this.sortBy,
+          order: this.order,
+        })
+        const res = await fetch(`/api/v1/workflows?${qs.toString()}`)
         if (!res.ok) throw new Error('请求失败: ' + res.status)
         const data = await res.json()
         // 兼容老格式（数组）与新分页格式（对象）
@@ -61,7 +82,7 @@ export default {
           this.workflows = Array.isArray(data.workflows) ? data.workflows : []
           this.total = typeof data.total === 'number' ? data.total : this.workflows.length
           this.page = typeof data.page === 'number' ? data.page : this.page
-          this.pageSize = typeof data.pageSize === 'number' ? data.pageSize : this.pageSize
+          this.pageSize = typeof data.page_size === 'number' ? data.page_size : this.pageSize
         }
       } catch (e) {
         this.error = e.message || '加载失败'
@@ -78,6 +99,10 @@ export default {
     },
     onPageSizeChange() {
       if (this.pageSize < 1) this.pageSize = 1
+      this.page = 1
+      this.fetchList()
+    },
+    onSortChange() {
       this.page = 1
       this.fetchList()
     }

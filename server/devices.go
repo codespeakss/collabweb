@@ -1,14 +1,15 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "strconv"
+    "strings"
+    "sort"
+    "sync"
+    "time"
 )
 
 type Device struct {
@@ -96,47 +97,76 @@ func deviceResourceHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getDevicesList(w http.ResponseWriter, r *http.Request) {
-	devicesMu.RLock()
-	defer devicesMu.RUnlock()
+    devicesMu.RLock()
+    defer devicesMu.RUnlock()
 
-	// 转换为切片
-	devices := make([]Device, 0, len(devicesStore))
-	for _, device := range devicesStore {
-		devices = append(devices, device)
-	}
+    // 转换为切片
+    devices := make([]Device, 0, len(devicesStore))
+    for _, device := range devicesStore {
+        devices = append(devices, device)
+    }
 
-	// 分页参数
-	page := 1
-	pageSize := 20
-	q := r.URL.Query()
-	if p := q.Get("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v > 0 {
-			page = v
-		}
-	}
-	if ps := q.Get("pageSize"); ps != "" {
-		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
-			pageSize = v
-		}
-	}
+    // 读取排序与分页参数（REST 风格：下划线命名）
+    page := 1
+    pageSize := 20
+    q := r.URL.Query()
+    sortBy := strings.ToLower(strings.TrimSpace(q.Get("sort_by")))
+    order := strings.ToLower(strings.TrimSpace(q.Get("order")))
+    if sortBy == "" { sortBy = "lastonline" }
+    if order != "asc" { order = "desc" }
+    if p := q.Get("page"); p != "" {
+        if v, err := strconv.Atoi(p); err == nil && v > 0 {
+            page = v
+        }
+    }
+    if ps := q.Get("page_size"); ps != "" {
+        if v, err := strconv.Atoi(ps); err == nil && v > 0 {
+            pageSize = v
+        }
+    }
 
-	start := (page - 1) * pageSize
-	end := start + pageSize
-	if start > len(devices) {
-		start = len(devices)
-	}
-	if end > len(devices) {
-		end = len(devices)
-	}
-	paged := devices[start:end]
+    // 排序（默认 lastOnline desc）
+    less := func(i, j int) bool { return false }
+    switch sortBy {
+    case "lastonline":
+        less = func(i, j int) bool { if devices[i].LastOnline == devices[j].LastOnline { return devices[i].ID < devices[j].ID } ; return devices[i].LastOnline < devices[j].LastOnline }
+    case "createdat":
+        less = func(i, j int) bool { if devices[i].CreatedAt == devices[j].CreatedAt { return devices[i].ID < devices[j].ID } ; return devices[i].CreatedAt < devices[j].CreatedAt }
+    case "updatedat":
+        less = func(i, j int) bool { if devices[i].UpdatedAt == devices[j].UpdatedAt { return devices[i].ID < devices[j].ID } ; return devices[i].UpdatedAt < devices[j].UpdatedAt }
+    case "name":
+        less = func(i, j int) bool { if devices[i].Name == devices[j].Name { return devices[i].ID < devices[j].ID } ; return devices[i].Name < devices[j].Name }
+    case "id":
+        less = func(i, j int) bool { return devices[i].ID < devices[j].ID }
+    case "type":
+        less = func(i, j int) bool { if devices[i].Type == devices[j].Type { return devices[i].ID < devices[j].ID } ; return devices[i].Type < devices[j].Type }
+    default:
+        // fallback
+        less = func(i, j int) bool { if devices[i].LastOnline == devices[j].LastOnline { return devices[i].ID < devices[j].ID } ; return devices[i].LastOnline < devices[j].LastOnline }
+    }
+    if order == "asc" {
+        sort.Slice(devices, less)
+    } else {
+        sort.Slice(devices, func(i, j int) bool { return less(j, i) })
+    }
 
-	resp := map[string]interface{}{
-		"devices":  paged,
-		"total":    len(devices),
-		"page":     page,
-		"pageSize": pageSize,
-	}
-	writeJSON(w, http.StatusOK, resp)
+    start := (page - 1) * pageSize
+    end := start + pageSize
+    if start > len(devices) {
+        start = len(devices)
+    }
+    if end > len(devices) {
+        end = len(devices)
+    }
+    paged := devices[start:end]
+
+    resp := map[string]interface{}{
+        "devices":   paged,
+        "total":     len(devices),
+        "page":      page,
+        "page_size": pageSize,
+    }
+    writeJSON(w, http.StatusOK, resp)
 }
 
 func createDevice(w http.ResponseWriter, r *http.Request) {

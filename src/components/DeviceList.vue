@@ -1,7 +1,27 @@
 <template>
   <div class="device-list">
     <h2>设备列表</h2>
-    <button @click="fetchDevices">刷新</button>
+    <div class="toolbar">
+      <label>
+        排序字段：
+        <select v-model="sortBy" @change="onSortChange">
+          <option value="lastonline">最近在线</option>
+          <option value="createdat">创建时间</option>
+          <option value="updatedat">更新时间</option>
+          <option value="name">名称</option>
+          <option value="id">ID</option>
+          <option value="type">类型</option>
+        </select>
+      </label>
+      <label>
+        方向：
+        <select v-model="order" @change="onSortChange">
+          <option value="desc">降序</option>
+          <option value="asc">升序</option>
+        </select>
+      </label>
+      <button @click="fetchDevices()">刷新</button>
+    </div>
     <table v-if="devices.length" class="device-table">
       <thead>
         <tr>
@@ -31,7 +51,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 
 function formatUTC(ts) {
   if (!ts) return '未知';
@@ -45,11 +65,19 @@ const currentPage = ref(1)
 const pageSize = 20
 const totalPages = ref(1)
 const total = ref(0)
+const sortBy = ref('lastonline')
+const order = ref('desc')
 
 async function fetchDevices(page = 1) {
   error.value = ''
   try {
-    const res = await fetch(`/api/v1/devices?page=${page}&pageSize=${pageSize}`)
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+      sort_by: sortBy.value,
+      order: order.value,
+    })
+    const res = await fetch(`/api/v1/devices?${params.toString()}`)
     if (!res.ok) throw new Error('服务端错误')
     const data = await res.json()
     devices.value = data.devices || []
@@ -66,13 +94,21 @@ function changePage(page) {
   fetchDevices(page)
 }
 
-fetchDevices(1)
+function onSortChange() {
+  // 变更排序后回到第 1 页
+  fetchDevices(1)
+}
+
+onMounted(() => {
+  fetchDevices(1)
+})
+
 </script>
 
 <style scoped>
 .device-list { padding: 2em; }
 .error { color: red; margin-top: 1em; }
-
+.toolbar { display: flex; align-items: center; gap: 1em; }
 .device-table {
   width: 100%;
   border-collapse: collapse;

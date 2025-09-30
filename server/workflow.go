@@ -579,18 +579,45 @@ func getWorkflowsList(w http.ResponseWriter, r *http.Request) {
     }
     createdMu.RUnlock()
 
-    // 分页参数
+    // 排序与分页参数（REST 风格：下划线命名）
     page := 1
     pageSize := 20
     q := r.URL.Query()
+    sortBy := strings.ToLower(strings.TrimSpace(q.Get("sort_by")))
+    order := strings.ToLower(strings.TrimSpace(q.Get("order")))
+    if sortBy == "" { sortBy = "name" }
+    if order != "asc" { order = "desc" }
     if p := q.Get("page"); p != "" {
-        if v, err := strconv.Atoi(p); err == nil && v > 0 {
-            page = v
-        }
+        if v, err := strconv.Atoi(p); err == nil && v > 0 { page = v }
     }
-    if ps := q.Get("pageSize"); ps != "" {
-        if v, err := strconv.Atoi(ps); err == nil && v > 0 {
-            pageSize = v
+    if ps := q.Get("page_size"); ps != "" {
+        if v, err := strconv.Atoi(ps); err == nil && v > 0 { pageSize = v }
+    }
+
+    // 排序
+    less := func(i, j int) bool { return false }
+    switch sortBy {
+    case "id":
+        less = func(i, j int) bool { return list[i].ID < list[j].ID }
+    case "status":
+        less = func(i, j int) bool { if list[i].Status == list[j].Status { return list[i].Name < list[j].Name } ; return list[i].Status < list[j].Status }
+    case "name":
+        fallthrough
+    default:
+        less = func(i, j int) bool { if list[i].Name == list[j].Name { return list[i].ID < list[j].ID } ; return list[i].Name < list[j].Name }
+    }
+    if order == "asc" {
+        // simple slice sort
+        for i := 0; i < len(list)-1; i++ {
+            for j := i + 1; j < len(list); j++ {
+                if less(j, i) { list[i], list[j] = list[j], list[i] }
+            }
+        }
+    } else {
+        for i := 0; i < len(list)-1; i++ {
+            for j := i + 1; j < len(list); j++ {
+                if less(i, j) { list[i], list[j] = list[j], list[i] }
+            }
         }
     }
 
@@ -608,7 +635,7 @@ func getWorkflowsList(w http.ResponseWriter, r *http.Request) {
         "workflows": paged,
         "total":     len(list),
         "page":      page,
-        "pageSize":  pageSize,
+        "page_size": pageSize,
     }
     writeJSON(w, http.StatusOK, resp)
 }
