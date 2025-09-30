@@ -55,7 +55,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  white-space: nowrap;
+  flex-wrap: wrap;
 }
 
 .top-nav a {
@@ -72,6 +72,16 @@
   .top-nav {
     background-color: rgba(36, 36, 36, 0.9);
     border-bottom-color: #333;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .nav-inner {
+    gap: 8px 10px;
+  }
+  .nav-inner .sep {
+    display: none;
   }
 }
 </style>

@@ -676,7 +676,7 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 500px;
+  min-width: 0;
 }
 
 .preview-header {
@@ -916,8 +916,8 @@ export default {
   background: white;
   border-radius: 8px;
   padding: 24px;
-  min-width: 400px;
-  max-width: 500px;
+  width: min(92vw, 560px);
+  max-width: 100%;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
 }
 
@@ -1009,11 +1009,34 @@ export default {
   
   .form-panel {
     flex: none;
+    width: 100%;
   }
   
   .preview-panel {
-    min-width: auto;
-    min-height: 400px;
+    min-width: 0;
+    min-height: 360px;
+  }
+}
+
+@media (max-width: 768px) {
+  .wf-create { 
+    padding: 12px; 
+    height: auto;
+  }
+  .form { 
+    padding-right: 0;
+  }
+  .edit-toolbar {
+    padding: 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .actions {
+    flex-wrap: wrap;
+  }
+  .editor-actions {
+    flex-wrap: wrap;
   }
 }
 </style>
