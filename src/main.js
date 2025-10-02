@@ -12,6 +12,7 @@ import WorkflowList from './components/WorkflowList.vue'
 import TechValidate from './components/TechValidate.vue'
 import WorkflowCreate from './components/WorkflowCreate.vue'
 import { startTitleScroller } from './utils/titleScroller.js'
+import { startServerStatusMonitor } from './utils/serverStatus.js'
 
 const routes = [
 	{ path: '/', component: Home },
@@ -39,5 +40,7 @@ app.use(router)
 const baseTitle = 'CollabMesh: Workflow Orchestration for Teams. '
 startTitleScroller(baseTitle, { interval: 180, separator: ' • ' })
 
-app.mount('#app')
+// Start connectivity monitor
+startServerStatusMonitor()
 
+app.mount('#app')

@@ -19,5 +19,9 @@ func main() {
     http.HandleFunc("/api/v1/workflows", workflowsCollectionHandler) // GET list, POST create
     http.HandleFunc("/api/v1/workflows/", workflowResourceHandler)   // GET/PUT/DELETE by id
 
+    // API v1 - 健康与连接状态
+    http.HandleFunc("/api/v1/health", healthHandler)              // GET liveness
+    http.HandleFunc("/api/v1/health/stream", healthStreamHandler) // GET SSE stream
+
     _ = http.ListenAndServe(":8080", nil)
 }
